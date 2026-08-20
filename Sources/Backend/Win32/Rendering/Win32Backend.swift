@@ -179,13 +179,15 @@ extension WindowGroup: Win32WindowRenderable {
                 if case .contentFixed = windowSizing ?? .automatic { return true }
                 return false
             }()
-            let minClientW = minWindowWidth.map { Int32($0) } ?? (hasExplicitSize ? 1 : 300)
-            let minClientH = minWindowHeight.map { Int32($0) } ?? (hasExplicitSize ? 1 : 200)
-            let maxClientW = maxWindowWidth.map { Int32($0) } ?? (screenW * 3 / 4)
-            let maxClientH = maxWindowHeight.map { Int32($0) } ?? (screenH * 3 / 4)
+            // Scale by the existing window's DPI.
+            let dpiScale = Double(win32_GetDpiForWindow(hwnd)) / 96.0
+            let minClientW = minWindowWidth.map { Int32(Double($0) * dpiScale) } ?? (hasExplicitSize ? 1 : 300)
+            let minClientH = minWindowHeight.map { Int32(Double($0) * dpiScale) } ?? (hasExplicitSize ? 1 : 200)
+            let maxClientW = maxWindowWidth.map { Int32(Double($0) * dpiScale) } ?? (screenW * 3 / 4)
+            let maxClientH = maxWindowHeight.map { Int32(Double($0) * dpiScale) } ?? (screenH * 3 / 4)
 
-            let defaultClientW = defaultWindowWidth.map { Int32($0) }
-            let defaultClientH = defaultWindowHeight.map { Int32($0) }
+            let defaultClientW = defaultWindowWidth.map { Int32(Double($0) * dpiScale) }
+            let defaultClientH = defaultWindowHeight.map { Int32(Double($0) * dpiScale) }
             let automaticDefaultClientSize: (Int32?, Int32?) = {
                 if case .automatic = windowSizing ?? .automatic {
                     return (Int32(defaultAutomaticWindowWidth), Int32(defaultAutomaticWindowHeight))
@@ -768,8 +770,9 @@ extension Window: Win32WindowRenderable {
         }
 
         let style = DWORD(WS_OVERLAPPEDWINDOW)
-        let clientW = defaultWindowWidth.map { Int32($0) } ?? 400
-        let clientH = defaultWindowHeight.map { Int32($0) } ?? 300
+        // Create at the logical size; scale by the window's own DPI before showing.
+        let clientW = Int32(defaultWindowWidth ?? 400)
+        let clientH = Int32(defaultWindowHeight ?? 300)
         let windowSize = adjustedWindowSize(
             clientWidth: clientW, clientHeight: clientH, style: style)
 
@@ -832,6 +835,15 @@ extension Window: Win32WindowRenderable {
         // Store the window id in a property so WM_DESTROY can clear it
         let windowId = id
         Win32WindowRegistry.shared.setLiveWindow(id: windowId, hwnd: hwnd)
+
+        // Scale the logical size by this window's DPI.
+        let dpiScale = Double(win32_GetDpiForWindow(hwnd)) / 96.0
+        let scaledSize = adjustedWindowSize(
+            clientWidth: Int32(Double(clientW) * dpiScale),
+            clientHeight: Int32(Double(clientH) * dpiScale),
+            style: style)
+        SetWindowPos(hwnd, nil, 0, 0, scaledSize.0, scaledSize.1,
+                     UINT(SWP_NOMOVE | SWP_NOZORDER))
 
         ShowWindow(hwnd, SW_SHOWDEFAULT)
         UpdateWindow(hwnd)
